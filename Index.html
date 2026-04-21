@@ -1,0 +1,2068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>FinTrack</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>tailwind.config={theme:{extend:{fontFamily:{display:['Syne','sans-serif'],body:['Manrope','sans-serif'],mono:['"JetBrains Mono"','monospace']}}}};</script>
+
+  <style>
+    :root {
+      --navy       : #003366; --navy-dark : #002147; --navy-mid : #004080;
+      --steel      : #7ba7bc; --steel-lt  : #a8c8d8; --steel-pale: #eaf3f8;
+      --gold       : #ffc72c; --gold-dark : #e6af00; --gold-pale : #fffbea;
+      --silver     : #adb5bd; --silver-lt : #dee2e6;
+      --bg         : #f0f4f8; --bg-card   : #ffffff; --bg-raised : #f6f9fc;
+      --border     : #dde3ea; --border-hi : #b0bec5;
+      --tx1        : #0d1b2a; --tx2       : #2c4a6e; --tx3       : #6b8cae;
+      --green      : #1a8754; --green-bg  : #d1f5e4;
+      --red        : #c0392b; --red-bg    : #fde8e6;
+      --amber      : #a07700; --amber-bg  : #fff3cd;
+      --sidebar-w  : 220px;
+      --sidebar-collapsed: 60px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin:0; padding:0; }
+    html, body { font-family:'Manrope',sans-serif; background:var(--bg); color:var(--tx1); min-height:100vh; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+    body::before { content:''; position:fixed; inset:0; z-index:0; background: radial-gradient(ellipse 700px 500px at 10% 0%,rgba(123,167,188,.1) 0%,transparent 65%), radial-gradient(ellipse 500px 400px at 90% 100%,rgba(0,51,102,.05) 0%,transparent 65%); pointer-events:none; }
+    ::-webkit-scrollbar{width:4px;height:4px} ::-webkit-scrollbar-track{background:var(--bg)} ::-webkit-scrollbar-thumb{background:var(--silver);border-radius:99px}
+
+    /* ── Loading ── */
+    #loading-overlay { position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;transition:opacity .4s; }
+    #loading-overlay.fade-out { opacity:0;pointer-events:none; }
+    .loader-ring { width:42px;height:42px;border:2.5px solid var(--border);border-top-color:var(--navy);border-radius:50%;animation:spin .7s linear infinite; }
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ── Toast ── */
+    #toast { position:fixed;top:1rem;right:1rem;background:var(--navy);color:#fff;border-radius:10px;padding:.65rem 1.25rem;font-size:.8rem;font-weight:600;white-space:nowrap;z-index:9998;opacity:0;transition:all .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;box-shadow:0 4px 20px rgba(0,51,102,.25);transform:translateY(-.5rem); }
+    #toast.show    { opacity:1;transform:translateY(0); }
+    #toast.success { background:var(--green); }
+    #toast.error   { background:var(--red); }
+
+    /* ══════════════════════════════════════════════════════════
+       LAYOUT: sidebar + main content
+    ══════════════════════════════════════════════════════════ */
+    #app { position:relative;z-index:1;display:none;min-height:100vh;opacity:0;transition:opacity .3s; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar-w);
+      min-height: 100vh;
+      background: var(--navy);
+      display: flex; flex-direction: column;
+      position: fixed; top:0; left:0; bottom:0; z-index:100;
+      transition: width .25s cubic-bezier(.4,0,.2,1);
+      overflow: hidden;
+      box-shadow: 2px 0 16px rgba(0,51,102,.18);
+    }
+    #sidebar.collapsed { width: var(--sidebar-collapsed); }
+
+    .sidebar-header {
+      display:flex; align-items:center; gap:.6rem;
+      padding:.9rem .9rem .9rem 1rem;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      min-height:56px; flex-shrink:0;
+    }
+    .logo-mark { width:30px;height:30px;background:var(--gold);border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:600;color:var(--navy);flex-shrink:0; }
+    .sidebar-brand { font-family:'Syne',sans-serif;font-weight:700;font-size:.95rem;color:#fff;white-space:nowrap;transition:opacity .2s; }
+    #sidebar.collapsed .sidebar-brand { opacity:0;pointer-events:none; }
+
+    /* Month nav inside sidebar */
+    #month-nav-sidebar {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:.6rem 1rem;
+      background:rgba(255,255,255,.05);
+      border-bottom:1px solid rgba(255,255,255,.07);
+      flex-shrink:0;
+    }
+    #sidebar.collapsed #month-nav-sidebar { display:none; }
+    #month-label { font-family:'JetBrains Mono',monospace;font-size:.72rem;font-weight:500;color:var(--steel-lt);flex:1;text-align:center; }
+    .month-nav-btn { width:24px;height:24px;border-radius:5px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0; }
+    .month-nav-btn:hover { background:rgba(255,199,44,.25);border-color:var(--gold); }
+
+    /* Nav items */
+    .sidebar-nav { flex:1;padding:.5rem 0;overflow-y:auto; }
+    .nav-item {
+      display:flex; align-items:center; gap:.75rem;
+      padding:.7rem 1rem; cursor:pointer;
+      color:rgba(255,255,255,.55); font-size:.82rem; font-weight:600;
+      letter-spacing:.01em; white-space:nowrap;
+      border-left:3px solid transparent;
+      transition:all .18s; user-select:none;
+      border:none; background:none; width:100%; text-align:left;
+    }
+    .nav-item svg { width:18px;height:18px;stroke:currentColor;fill:none;flex-shrink:0; }
+    .nav-item:hover { color:rgba(255,255,255,.85);background:rgba(255,255,255,.05); }
+    .nav-item.active { color:#fff;background:rgba(255,255,255,.1);border-left:3px solid var(--gold); }
+    #sidebar.collapsed .nav-item { justify-content:center;padding:.7rem 0; }
+    #sidebar.collapsed .nav-label { display:none; }
+
+    /* Collapse toggle */
+    #sidebar-toggle {
+      padding:.75rem 1rem; cursor:pointer; border:none; background:none;
+      color:rgba(255,255,255,.4); display:flex; align-items:center; gap:.75rem;
+      font-size:.78rem; font-weight:600; white-space:nowrap;
+      border-top:1px solid rgba(255,255,255,.08); transition:color .18s;
+      width:100%;
+    }
+    #sidebar-toggle:hover { color:rgba(255,255,255,.8); }
+    #sidebar-toggle svg { width:18px;height:18px;stroke:currentColor;fill:none;flex-shrink:0; }
+    #sidebar.collapsed #sidebar-toggle { justify-content:center; }
+    #sidebar.collapsed #toggle-label { display:none; }
+
+    /* Sidebar overlay (mobile) */
+    #sidebar-overlay { display:none;position:fixed;inset:0;z-index:99;background:rgba(0,20,50,.4); }
+    #sidebar-overlay.visible { display:block; }
+
+    /* ── Main area ── */
+    #main-area {
+      margin-left: var(--sidebar-w);
+      flex:1; display:flex; flex-direction:column; min-height:100vh;
+      transition:margin-left .25s cubic-bezier(.4,0,.2,1);
+    }
+    #main-area.sidebar-collapsed { margin-left: var(--sidebar-collapsed); }
+
+    /* Mobile: sidebar slides in over content */
+    @media (max-width:768px) {
+      #sidebar { transform:translateX(-100%); width:var(--sidebar-w) !important; }
+      #sidebar.mobile-open { transform:translateX(0); }
+      #main-area { margin-left:0 !important; }
+      #mobile-header { display:flex !important; }
+    }
+
+    /* Mobile top bar */
+    #mobile-header {
+      display:none; position:sticky;top:0;z-index:50;
+      background:var(--navy); padding:.65rem 1rem;
+      align-items:center; justify-content:space-between;
+      box-shadow:0 2px 12px rgba(0,51,102,.25);
+    }
+    #mobile-menu-btn { background:none;border:none;color:#fff;cursor:pointer;padding:.2rem; }
+    #mobile-menu-btn svg { width:20px;height:20px;stroke:currentColor;fill:none; }
+
+    /* ── Views ── */
+    .view { display:none !important; }
+    .view.active { display:block !important; animation:fadeUp .2s ease; }
+    @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    .dashboard-inner { display:flex;flex-direction:column;gap:.85rem;padding:1rem; }
+    .page-pad { padding:1rem; }
+
+    /* ── Cards ── */
+    .card { background:var(--bg-card);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 1px 4px rgba(0,51,102,.05); }
+    .card-padded { padding:1.1rem; }
+    .kpi-card { background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:.95rem 1rem;position:relative;overflow:hidden;box-shadow:0 1px 4px rgba(0,51,102,.05); }
+    .kpi-accent-line { position:absolute;top:0;left:0;right:0;height:3px; }
+    .chart-wrap { background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:1.1rem;box-shadow:0 1px 4px rgba(0,51,102,.05); }
+
+    /* ── Labels ── */
+    .section-label { font-size:.63rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3);margin-bottom:.7rem; }
+    .section-stripe { display:inline-block;width:3px;height:.85em;background:var(--gold);border-radius:2px;margin-right:.38rem;vertical-align:middle; }
+    .page-title { font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:700;color:var(--navy);letter-spacing:-.02em; }
+    .page-sub   { color:var(--tx3);font-size:.76rem;margin-top:.18rem; }
+
+    /* ── Form ── */
+    .form-input { width:100%;background:var(--bg-raised);border:1px solid var(--border);border-radius:8px;padding:.65rem .85rem;color:var(--tx1);font-size:.875rem;font-family:'Manrope',sans-serif;outline:none;transition:border-color .18s,box-shadow .18s; }
+    .form-input:focus { border-color:var(--navy);box-shadow:0 0 0 3px rgba(0,51,102,.1);background:#fff; }
+    .form-input::placeholder { color:var(--silver); }
+    select.form-input option { background:#fff;color:var(--tx1); }
+    .form-row { display:grid;grid-template-columns:1fr 1fr;gap:.7rem; }
+    @media(max-width:480px){ .form-row{grid-template-columns:1fr;} }
+
+    /* ── Buttons ── */
+    .btn-primary { width:100%;background:var(--navy);color:#fff;font-weight:700;font-size:.875rem;padding:.78rem 1.5rem;border-radius:9px;border:none;cursor:pointer;font-family:'Manrope',sans-serif;letter-spacing:.02em;transition:transform .15s,box-shadow .15s,background .15s; }
+    .btn-primary:hover:not(:disabled) { background:var(--navy-mid);transform:translateY(-1px);box-shadow:0 6px 20px rgba(0,51,102,.28); }
+    .btn-primary:active:not(:disabled) { transform:translateY(0); }
+    .btn-primary:disabled { opacity:.45;cursor:not-allowed; }
+    .btn-ghost  { background:transparent;border:1px solid var(--border);color:var(--tx2);padding:.42rem .85rem;border-radius:7px;font-size:.775rem;font-weight:600;cursor:pointer;transition:all .18s;font-family:'Manrope',sans-serif; }
+    .btn-ghost:hover { border-color:var(--navy);color:var(--navy);background:var(--steel-pale); }
+    .btn-gold   { background:var(--gold);border:none;color:var(--navy);padding:.42rem .85rem;border-radius:7px;font-size:.775rem;font-weight:700;cursor:pointer;transition:all .18s;font-family:'Manrope',sans-serif; }
+    .btn-gold:hover { background:var(--gold-dark); }
+    .btn-sm     { padding:.3rem .65rem;font-size:.72rem; }
+
+    /* ── Progress ── */
+    .progress-track { height:6px;border-radius:99px;background:var(--silver-lt);overflow:hidden; }
+    .progress-fill  { height:100%;border-radius:99px;transition:width .6s cubic-bezier(.34,1.56,.64,1); }
+
+    /* ── Transaction row ── */
+    .tx-row { display:flex;align-items:center;gap:.75rem;padding:.8rem 1rem;border-bottom:1px solid var(--border);transition:background .13s; }
+    .tx-row:hover { background:var(--steel-pale); }
+    .tx-row:last-child { border-bottom:none; }
+    .cat-icon { width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:.95rem;flex-shrink:0;background:var(--steel-pale); }
+    .del-btn  { width:26px;height:26px;flex-shrink:0;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--silver);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .18s; }
+    .del-btn:hover { border-color:var(--red);color:var(--red);background:var(--red-bg); }
+
+    /* ── Pills ── */
+    .pill { display:inline-block;padding:.14rem .5rem;border-radius:99px;font-size:.63rem;font-weight:700;font-family:'JetBrains Mono',monospace; }
+    .pill-green { background:var(--green-bg);color:var(--green); }
+    .pill-red   { background:var(--red-bg);color:var(--red); }
+    .pill-amber { background:var(--amber-bg);color:var(--amber); }
+    .pill-blue  { background:var(--steel-pale);color:var(--navy); }
+    .pill-gold  { background:var(--gold-pale);color:var(--amber); }
+
+    /* ── Income source badge ── */
+    .income-badge { display:inline-flex;align-items:center;gap:.3rem;background:var(--steel-pale);border:1px solid var(--steel-lt);border-radius:6px;padding:.22rem .5rem;font-size:.7rem;font-weight:600;color:var(--navy); }
+
+    /* ── Settings category row ── */
+    .cat-row { background:var(--bg-raised);border:1px solid var(--border);border-radius:10px;padding:.85rem 1rem;margin-bottom:.55rem; }
+    .cat-row-header { display:flex;align-items:center;gap:.6rem;cursor:pointer; }
+    .cat-row-body   { display:none;padding-top:.75rem;border-top:1px solid var(--border);margin-top:.7rem; }
+    .cat-row.open .cat-row-body { display:block; }
+    .subcat-tag { display:inline-flex;align-items:center;gap:.3rem;background:var(--steel-pale);border:1px solid var(--steel-lt);border-radius:6px;padding:.22rem .5rem;font-size:.7rem;font-weight:600;color:var(--navy); }
+    .subcat-tag .rm { cursor:pointer;color:var(--silver);line-height:1;transition:color .15s;font-size:.85rem; }
+    .subcat-tag .rm:hover { color:var(--red); }
+    .icon-btn { padding:.32rem .45rem;border-radius:7px;background:var(--bg-raised);border:1.5px solid var(--border);cursor:pointer;font-size:1.05rem;line-height:1;transition:border-color .14s,background .14s; }
+    .icon-btn:hover, .icon-btn.selected { border-color:var(--navy);background:var(--steel-pale); }
+
+    /* ── Date filter bar ── */
+    .date-filter-bar { display:flex;align-items:center;gap:.55rem;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:.6rem .8rem;margin-bottom:.85rem;flex-wrap:wrap;box-shadow:0 1px 3px rgba(0,51,102,.05); }
+
+    /* ── Drill tabs ── */
+    .drill-tabs { display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.75rem; }
+    .drill-tab  { padding:.28rem .65rem;border-radius:6px;font-size:.7rem;font-weight:700;background:var(--bg-raised);border:1px solid var(--border);color:var(--tx3);cursor:pointer;transition:all .15s; }
+    .drill-tab.active { background:var(--navy);border-color:var(--navy);color:#fff; }
+
+    /* ── Empty state ── */
+    .empty-state { text-align:center;padding:2.5rem 1rem;color:var(--silver); }
+
+    /* ── Income summary bar ── */
+    .income-summary {
+      display:grid; grid-template-columns:repeat(3,1fr); gap:.6rem;
+      background:var(--navy); border-radius:12px; padding:1rem; margin-bottom:.85rem;
+    }
+    .income-summary-item { text-align:center; }
+    .income-summary-item .lbl { font-size:.58rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.5); margin-bottom:.2rem; }
+    .income-summary-item .val { font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:#fff; }
+    .income-summary-item .val.gold { color:var(--gold); }
+    .income-summary-item .val.green { color:#6ee7b7; }
+
+    /* Income source tag in settings */
+    .src-tag { display:inline-flex;align-items:center;gap:.3rem;background:var(--gold-pale);border:1px solid var(--gold-dark);border-radius:6px;padding:.22rem .5rem;font-size:.7rem;font-weight:600;color:var(--amber); }
+    .src-tag .rm { cursor:pointer;color:var(--amber);opacity:.5;line-height:1;font-size:.85rem;transition:opacity .15s; }
+    .src-tag .rm:hover { opacity:1;color:var(--red); }
+  /* ── Reminder toggle ── */
+  .toggle-track {
+    width:40px; height:22px; border-radius:99px;
+    background:var(--silver-lt); border:none; cursor:pointer;
+    position:relative; transition:background .2s; flex-shrink:0;
+    padding:0;
+  }
+  .toggle-track.on { background:var(--navy); }
+  .toggle-thumb {
+    position:absolute; top:3px; left:3px;
+    width:16px; height:16px; border-radius:50%;
+    background:#fff; transition:transform .2s;
+    pointer-events:none;
+  }
+  .toggle-track.on .toggle-thumb { transform:translateX(18px); }
+  .reminder-card {
+    background:var(--bg-raised); border:1px solid var(--border);
+    border-radius:12px; padding:1rem; display:flex;
+    flex-direction:column; gap:.75rem;
+  }
+  .reminder-status {
+    display:inline-flex; align-items:center; gap:.4rem;
+    font-size:.72rem; font-weight:700; padding:.25rem .65rem;
+    border-radius:99px;
+  }
+  .reminder-status.active  { background:var(--green-bg); color:var(--green); }
+  .reminder-status.inactive{ background:var(--silver-lt); color:var(--silver); }
+
+  /* ── Auth tabs ── */
+  .auth-tab { font-family: 'Manrope', sans-serif; }
+  .auth-tab:hover { opacity: 0.85; }
+
+  /* ── Confirmation Modal ── */
+  #confirm-modal { display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,20,50,.6); backdrop-filter:blur(4px); align-items:center; justify-content:center; padding:1rem; animation:fadeIn .2s ease; }
+  #confirm-modal.show { display:flex; }
+  @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+  .confirm-modal-content { background:var(--bg-card); border:1px solid var(--border); border-radius:16px; max-width:440px; width:100%; padding:0; box-shadow:0 20px 60px rgba(0,51,102,.3); animation:slideUp .25s ease; }
+  @keyframes slideUp { from{transform:translateY(20px);opacity:0;} to{transform:translateY(0);opacity:1;} }
+  .confirm-modal-header { padding:1.5rem 1.5rem 1rem; border-bottom:1px solid var(--border); }
+  .confirm-modal-title { font-family:'Syne',sans-serif; font-size:1.1rem; font-weight:700; color:var(--navy); margin:0; display:flex; align-items:center; gap:.5rem; }
+  .confirm-modal-body { padding:1.5rem; color:var(--tx2); font-size:.875rem; line-height:1.6; }
+  .confirm-modal-footer { padding:1rem 1.5rem; border-top:1px solid var(--border); display:flex; gap:.75rem; justify-content:flex-end; }
+  .confirm-btn { padding:.65rem 1.5rem; border-radius:8px; font-size:.875rem; font-weight:600; cursor:pointer; transition:all .18s; border:none; font-family:'Manrope',sans-serif; }
+  .confirm-btn-cancel { background:var(--bg-raised); color:var(--tx2); border:1px solid var(--border); }
+  .confirm-btn-cancel:hover { background:var(--silver-lt); }
+  .confirm-btn-confirm { background:var(--navy); color:#fff; }
+  .confirm-btn-confirm:hover { background:var(--navy-mid); transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,51,102,.25); }
+  .confirm-btn-confirm.danger { background:var(--red); }
+  .confirm-btn-confirm.danger:hover { background:#a02e21; }
+  </style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="loader-ring"></div>
+  <p style="color:var(--tx3);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;font-family:'JetBrains Mono',monospace;">Loading…</p>
+</div>
+
+<!-- Login/Register Screen -->
+<div id="login-screen" style="display:none;position:fixed;inset:0;z-index:10000;background:var(--bg);align-items:center;justify-content:center;padding:1rem;">
+  <div style="max-width:420px;width:100%;background:var(--bg-card);border:1px solid var(--border);border-radius:18px;padding:2.5rem 2rem;box-shadow:0 12px 40px rgba(0,51,102,.15);">
+    <div style="text-align:center;margin-bottom:2rem;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;background:var(--navy);border-radius:16px;margin-bottom:1.2rem;">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:1.6rem;font-weight:700;color:var(--gold);">Ft</span>
+      </div>
+      <h1 style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:700;color:var(--navy);margin-bottom:.35rem;">Welcome to FinTrack</h1>
+      <p style="color:var(--tx3);font-size:.875rem;line-height:1.5;">Your personal finance tracker</p>
+    </div>
+
+    <!-- Tab Switcher -->
+    <div style="display:flex;gap:.5rem;margin-bottom:1.5rem;background:var(--bg-raised);padding:.3rem;border-radius:10px;">
+      <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')" style="flex:1;padding:.6rem;border:none;background:var(--navy);color:#fff;border-radius:7px;font-weight:600;font-size:.85rem;cursor:pointer;transition:all .2s;font-family:'Manrope',sans-serif;">Login</button>
+      <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')" style="flex:1;padding:.6rem;border:none;background:transparent;color:var(--tx3);border-radius:7px;font-weight:600;font-size:.85rem;cursor:pointer;transition:all .2s;font-family:'Manrope',sans-serif;">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="login-form" style="display:flex;flex-direction:column;gap:1rem;">
+      <div>
+        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--tx2);margin-bottom:.4rem;">Email</label>
+        <input type="email" id="login-email" class="form-input" placeholder="your@email.com" style="font-size:.875rem;">
+      </div>
+      <div>
+        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--tx2);margin-bottom:.4rem;">Password</label>
+        <input type="password" id="login-password" class="form-input" placeholder="Enter your password" style="font-size:.875rem;" onkeydown="if(event.key==='Enter')loginSubmit()">
+      </div>
+      <button class="btn-primary" onclick="loginSubmit()" id="login-btn">
+        <span id="login-btn-text">Login</span>
+      </button>
+    </div>
+
+    <!-- Register Form -->
+    <div id="register-form" style="display:none;flex-direction:column;gap:1rem;">
+      <div>
+        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--tx2);margin-bottom:.4rem;">Email</label>
+        <input type="email" id="register-email" class="form-input" placeholder="your@email.com" style="font-size:.875rem;">
+      </div>
+      <div>
+        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--tx2);margin-bottom:.4rem;">Password</label>
+        <input type="password" id="register-password" class="form-input" placeholder="At least 6 characters" style="font-size:.875rem;">
+      </div>
+      <div>
+        <label style="display:block;font-size:.75rem;font-weight:600;color:var(--tx2);margin-bottom:.4rem;">Confirm Password</label>
+        <input type="password" id="register-password-confirm" class="form-input" placeholder="Re-enter password" style="font-size:.875rem;" onkeydown="if(event.key==='Enter')registerSubmit()">
+      </div>
+      <button class="btn-primary" onclick="registerSubmit()" id="register-btn">
+        <span id="register-btn-text">Create Account</span>
+      </button>
+    </div>
+
+    <p style="text-align:center;font-size:.72rem;color:var(--silver);margin-top:1.5rem;line-height:1.5;">Your data is encrypted and stored securely.</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Auth-required banner — shown when script.scriptapp scope is missing -->
+<div id="auth-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9997;background:#7f1d1d;color:#fecaca;font-size:.8rem;font-weight:600;padding:.7rem 1rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;">
+  <svg viewBox="0 0 24 24" stroke-width="2" style="width:16px;height:16px;stroke:currentColor;fill:none;flex-shrink:0;"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span id="auth-banner-msg" style="flex:1;">One-time setup required to activate the email reminder trigger.</span>
+  <button onclick="dismissAuthBanner()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:6px;padding:.3rem .75rem;font-size:.75rem;font-weight:700;cursor:pointer;flex-shrink:0;">Dismiss</button>
+</div>
+<div id="sidebar-overlay" onclick="closeMobileSidebar()"></div>
+
+<div id="app">
+
+  <!-- ══════════════════════════════
+       SIDEBAR
+  ══════════════════════════════ -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-mark">Ft</div>
+      <span class="sidebar-brand">FinTrack</span>
+    </div>
+
+    <!-- User info bar -->
+    <div id="user-info-bar" style="padding:.65rem 1rem;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.07);display:none;">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.45rem;">
+        <div style="width:28px;height:28px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;color:var(--navy);flex-shrink:0;" id="user-avatar">U</div>
+        <div style="flex:1;min-width:0;">
+          <div id="user-name" style="font-size:.72rem;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">User</div>
+          <div id="user-email-display" style="font-size:.62rem;color:var(--steel-lt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">email@example.com</div>
+        </div>
+      </div>
+      <button onclick="logout()" style="width:100%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.7);border-radius:6px;padding:.35rem .6rem;font-size:.7rem;font-weight:600;cursor:pointer;transition:all .18s;">
+        🚪 Logout
+      </button>
+    </div>
+
+    <!-- Month navigator (visible in sidebar) -->
+    <div id="month-nav-sidebar">
+      <button class="month-nav-btn" onclick="changeMonth(-1)">
+        <svg viewBox="0 0 24 24" stroke-width="2.5" style="width:10px;height:10px;stroke:currentColor;fill:none;"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <span id="month-label"></span>
+      <button class="month-nav-btn" onclick="changeMonth(1)">
+        <svg viewBox="0 0 24 24" stroke-width="2.5" style="width:10px;height:10px;stroke:currentColor;fill:none;"><path d="M9 18l6-6-6-6"/></svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav">
+      <button class="nav-item active" id="nav-dashboard" onclick="switchTab('dashboard')">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        <span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" id="nav-income" onclick="switchTab('income')">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span class="nav-label">Income</span>
+      </button>
+      <button class="nav-item" id="nav-add" onclick="switchTab('add')">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        <span class="nav-label">Add Expense</span>
+      </button>
+      <button class="nav-item" id="nav-transactions" onclick="switchTab('transactions')">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><circle cx="3" cy="18" r="1" fill="currentColor"/></svg>
+        <span class="nav-label">History</span>
+      </button>
+      <button class="nav-item" id="nav-settings" onclick="switchTab('settings')">
+        <svg viewBox="0 0 24 24" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        <span class="nav-label">Settings</span>
+      </button>
+    </nav>
+
+    <button id="sidebar-toggle" onclick="toggleSidebar()">
+      <svg viewBox="0 0 24 24" stroke-width="2" id="toggle-icon" style="transition:transform .25s;">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+      <span id="toggle-label">Collapse</span>
+    </button>
+  </aside>
+
+  <!-- ══════════════════════════════
+       MAIN AREA
+  ══════════════════════════════ -->
+  <div id="main-area">
+
+    <!-- Mobile top bar -->
+    <div id="mobile-header">
+      <button id="mobile-menu-btn" onclick="openMobileSidebar()">
+        <svg viewBox="0 0 24 24" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+      <span style="font-family:'Syne',sans-serif;font-weight:700;font-size:.95rem;color:#fff;">FinTrack</span>
+      <div style="display:flex;align-items:center;gap:.4rem;">
+        <button class="month-nav-btn" onclick="changeMonth(-1)"><svg viewBox="0 0 24 24" stroke-width="2.5" style="width:10px;height:10px;stroke:#fff;fill:none;"><path d="M15 18l-6-6 6-6"/></svg></button>
+        <span id="month-label-mobile" style="font-family:'JetBrains Mono',monospace;font-size:.68rem;color:var(--steel-lt);min-width:72px;text-align:center;"></span>
+        <button class="month-nav-btn" onclick="changeMonth(1)"><svg viewBox="0 0 24 24" stroke-width="2.5" style="width:10px;height:10px;stroke:#fff;fill:none;"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div>
+    </div>
+
+    <!-- ══ Page content ══ -->
+    <main style="flex:1;overflow-y:auto;">
+
+      <!-- ═══════ VIEW: DASHBOARD ═══════ -->
+      <div id="view-dashboard" class="view active">
+        <div class="dashboard-inner">
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.6rem;" id="kpi-cards"></div>
+          <div class="chart-wrap" id="pie-wrap">
+            <p class="section-label"><span class="section-stripe"></span>Spending by Category</p>
+            <div id="pie-canvas-wrap" style="max-height:250px;display:flex;align-items:center;justify-content:center;"><canvas id="pie-chart"></canvas></div>
+            <div id="pie-empty" class="empty-state" style="display:none;padding:1.5rem;"><p style="font-size:.82rem;">No spending this month.</p></div>
+          </div>
+          <div class="chart-wrap" id="bar-wrap">
+            <p class="section-label"><span class="section-stripe"></span>Daily Spending Trend</p>
+            <div id="bar-canvas-wrap"><canvas id="bar-chart" style="max-height:200px;"></canvas></div>
+            <div id="bar-empty" class="empty-state" style="display:none;padding:1.5rem;"><p style="font-size:.82rem;color:var(--silver);">No data this month.</p></div>
+          </div>
+          <div class="chart-wrap" id="subcategory-section">
+            <p class="section-label"><span class="section-stripe"></span>Subcategory Breakdown</p>
+            <div id="drill-tabs" class="drill-tabs"></div>
+            <div id="subcat-canvas-wrap"><canvas id="subcategory-chart" style="max-height:220px;"></canvas></div>
+            <div id="subcategory-empty" class="empty-state" style="display:none;padding:1.5rem;"><p style="font-size:.8rem;">No subcategory data this month.</p></div>
+          </div>
+          <div class="chart-wrap">
+            <p class="section-label"><span class="section-stripe"></span>Budget Status</p>
+            <div id="budget-bars" style="display:flex;flex-direction:column;gap:.85rem;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════ VIEW: INCOME ═══════ -->
+      <div id="view-income" class="view page-pad">
+        <div style="max-width:600px;margin:0 auto;">
+          <div style="margin-bottom:1.1rem;">
+            <h2 class="page-title">Income</h2>
+            <p class="page-sub">Log additional income sources for this month</p>
+          </div>
+
+          <!-- Income summary bar -->
+          <div class="income-summary" id="income-summary-bar">
+            <div class="income-summary-item"><div class="lbl">Base Salary</div><div class="val" id="inc-base">—</div></div>
+            <div class="income-summary-item"><div class="lbl">Extra Income</div><div class="val gold" id="inc-extra">—</div></div>
+            <div class="income-summary-item"><div class="lbl">Total Income</div><div class="val green" id="inc-total">—</div></div>
+          </div>
+
+          <!-- Add income form -->
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:.85rem;margin-bottom:1rem;">
+            <p class="section-label" style="margin-bottom:0;"><span class="section-stripe"></span>Add Income Entry</p>
+            <div class="form-row">
+              <div>
+                <label class="section-label" style="display:block;margin-bottom:.4rem;">Date</label>
+                <input type="date" id="i-date" class="form-input">
+              </div>
+              <div>
+                <label class="section-label" style="display:block;margin-bottom:.4rem;">Amount (<span id="i-currency">MYR</span>)</label>
+                <input type="number" id="i-amount" class="form-input" placeholder="0.00" min="0.01" step="0.01">
+              </div>
+            </div>
+            <div>
+              <label class="section-label" style="display:block;margin-bottom:.4rem;">Source</label>
+              <select id="i-source" class="form-input">
+                <option value="" disabled selected>Select income source…</option>
+              </select>
+            </div>
+            <div>
+              <label class="section-label" style="display:block;margin-bottom:.4rem;">Note <span style="color:var(--silver);font-weight:400;">(optional)</span></label>
+              <input type="text" id="i-note" class="form-input" placeholder="e.g. Q1 performance bonus">
+            </div>
+            <button id="income-submit-btn" class="btn-primary" onclick="submitIncome()">
+              <span id="income-btn-text">Save Income Entry</span>
+            </button>
+          </div>
+
+          <!-- Income entries list -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.65rem;">
+            <p class="section-label" style="margin:0;"><span class="section-stripe"></span>This Month's Entries</p>
+            <button class="btn-ghost btn-sm" onclick="loadIncomeEntries()">↻ Refresh</button>
+          </div>
+          <div id="income-list" class="card" style="overflow:hidden;"></div>
+
+        </div>
+      </div>
+
+      <!-- ═══════ VIEW: ADD EXPENSE ═══════ -->
+      <div id="view-add" class="view page-pad">
+        <div style="max-width:480px;margin:0 auto;">
+          <div style="margin-bottom:1.2rem;"><h2 class="page-title">Add Expense</h2><p class="page-sub">Record a new transaction</p></div>
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:.85rem;">
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Date</label><input type="date" id="f-date" class="form-input"></div>
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Amount (<span id="currency-label">MYR</span>)</label><input type="number" id="f-amount" class="form-input" placeholder="0.00" min="0.01" step="0.01"></div>
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Category</label><select id="f-category" class="form-input" onchange="onCategoryChange()"><option value="" disabled selected>Select a category…</option></select></div>
+            <div id="subcategory-field" style="display:none;"><label class="section-label" style="display:block;margin-bottom:.45rem;">Subcategory <span style="color:var(--silver);font-weight:400;">(optional)</span></label><select id="f-subcategory" class="form-input"><option value="">— None —</option></select></div>
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Note <span style="color:var(--silver);font-weight:400;">(optional)</span></label><input type="text" id="f-note" class="form-input" placeholder="e.g. Lunch at Nasi Kandar"></div>
+            <button id="submit-btn" class="btn-primary" onclick="submitTransaction()"><span id="btn-text">Save Transaction</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════ VIEW: HISTORY ═══════ -->
+      <div id="view-transactions" class="view page-pad">
+        <div style="margin-bottom:1rem;display:flex;align-items:flex-start;justify-content:space-between;">
+          <div><h2 class="page-title">History</h2><p id="tx-count" class="page-sub"></p></div>
+          <button class="btn-ghost" onclick="loadHistory()">↻ Refresh</button>
+        </div>
+        <div class="date-filter-bar">
+          <svg viewBox="0 0 24 24" stroke-width="1.5" style="width:14px;height:14px;stroke:var(--tx3);fill:none;flex-shrink:0;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <input type="date" id="h-start" class="form-input" style="width:auto;flex:1;min-width:110px;padding:.38rem .6rem;font-size:.78rem;">
+          <span style="color:var(--silver);font-size:.74rem;flex-shrink:0;">to</span>
+          <input type="date" id="h-end" class="form-input" style="width:auto;flex:1;min-width:110px;padding:.38rem .6rem;font-size:.78rem;">
+          <button class="btn-gold btn-sm" onclick="applyHistoryFilter()">Apply</button>
+          <button class="btn-ghost btn-sm" onclick="resetHistoryFilter()">This Month</button>
+        </div>
+        <div id="tx-list" class="card" style="overflow:hidden;"></div>
+      </div>
+
+      <!-- ═══════ VIEW: SETTINGS ═══════ -->
+      <div id="view-settings" class="view page-pad">
+        <div style="max-width:540px;margin:0 auto;">
+          <div style="margin-bottom:1.2rem;">
+            <h2 class="page-title">Settings</h2>
+            <p class="page-sub">Configure income, budgets &amp; categories</p>
+          </div>
+
+          <!-- Account Management Section -->
+          <div class="card card-padded" style="margin-bottom:1rem;">
+            <p class="section-label" style="margin-bottom:.75rem;"><span class="section-stripe"></span>Account Management</p>
+
+            <!-- Change Email -->
+            <div style="margin-bottom:1.25rem;">
+              <label class="section-label" style="display:block;margin-bottom:.45rem;">Change Email</label>
+              <div style="display:flex;gap:.55rem;">
+                <input type="email" id="new-email" class="form-input" placeholder="new@email.com" style="flex:1;">
+                <button class="btn-gold" onclick="changeEmail()">Update</button>
+              </div>
+              <p style="font-size:.68rem;color:var(--tx3);margin-top:.4rem;">Current: <strong id="current-email-display">-</strong></p>
+            </div>
+
+            <!-- Change Password -->
+            <div>
+              <label class="section-label" style="display:block;margin-bottom:.45rem;">Change Password</label>
+              <div style="display:flex;flex-direction:column;gap:.55rem;">
+                <input type="password" id="current-password" class="form-input" placeholder="Current password">
+                <input type="password" id="new-password" class="form-input" placeholder="New password (min 6 characters)">
+                <input type="password" id="confirm-password" class="form-input" placeholder="Confirm new password">
+                <button class="btn-gold" onclick="changePassword()">Update Password</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Export/Import Section -->
+          <div class="card card-padded" style="margin-bottom:1rem;">
+            <p class="section-label" style="margin-bottom:.75rem;"><span class="section-stripe"></span>Data Management</p>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:.55rem;margin-bottom:.75rem;">
+              <button class="btn-ghost" onclick="exportAsJSON()" style="display:flex;align-items:center;justify-content:center;gap:.4rem;">
+                <svg viewBox="0 0 24 24" stroke-width="2" style="width:14px;height:14px;stroke:currentColor;fill:none;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Export JSON
+              </button>
+              <button class="btn-ghost" onclick="exportAsCSV()" style="display:flex;align-items:center;justify-content:center;gap:.4rem;">
+                <svg viewBox="0 0 24 24" stroke-width="2" style="width:14px;height:14px;stroke:currentColor;fill:none;"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Export CSV
+              </button>
+            </div>
+            <div>
+              <label class="section-label" style="display:block;margin-bottom:.45rem;">Import Data (JSON)</label>
+              <input type="file" id="import-file" accept=".json" class="form-input" style="font-size:.78rem;padding:.55rem .7rem;">
+              <button class="btn-gold" onclick="importData()" style="width:100%;margin-top:.55rem;font-size:.82rem;">
+                📥 Import from File
+              </button>
+            </div>
+            <p style="font-size:.68rem;color:var(--tx3);margin-top:.65rem;line-height:1.5;">
+              💡 <strong>Tip:</strong> Export your data regularly as a backup. Import will add data to your existing records.
+            </p>
+          </div>
+
+          <div class="card card-padded" style="display:flex;flex-direction:column;gap:1.05rem;">
+
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Base Monthly Salary</label><input type="number" id="s-income" class="form-input" placeholder="5000"></div>
+            <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Currency Code</label><input type="text" id="s-currency" class="form-input" placeholder="MYR" maxlength="5"></div>
+
+            <!-- Income sources manager -->
+            <div>
+              <p class="section-label" style="margin-bottom:.55rem;"><span class="section-stripe"></span>Extra Income Sources</p>
+              <div id="s-income-sources" style="display:flex;flex-wrap:wrap;gap:.38rem;min-height:28px;margin-bottom:.55rem;"></div>
+              <div style="display:flex;gap:.45rem;">
+                <input type="text" id="s-new-source" class="form-input" placeholder="Add source (e.g. Freelance)…" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addIncomeSource();}">
+                <button class="btn-gold" onclick="addIncomeSource()">+</button>
+              </div>
+            </div>
+
+            <!-- Categories -->
+            <div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem;">
+                <p class="section-label" style="margin:0;"><span class="section-stripe"></span>Categories &amp; Budgets</p>
+                <button class="btn-gold btn-sm" onclick="openAddCategoryModal()">+ Add Category</button>
+              </div>
+              <div id="s-categories"></div>
+            </div>
+
+            <!-- ── Daily Reminder ── -->
+            <div>
+              <p class="section-label" style="margin-bottom:.6rem;"><span class="section-stripe"></span>Daily Spending Reminder</p>
+              <div class="reminder-card">
+
+                <!-- Enable toggle row -->
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                  <div>
+                    <div style="font-size:.82rem;font-weight:600;color:var(--tx1);">Email Reminder</div>
+                    <div style="font-size:.7rem;color:var(--tx3);margin-top:.15rem;">Receive a daily nudge with your spending summary</div>
+                  </div>
+                  <button class="toggle-track" id="reminder-toggle" onclick="toggleReminder()" title="Enable/disable reminder">
+                    <div class="toggle-thumb"></div>
+                  </button>
+                </div>
+
+                <!-- Status badge -->
+                <div id="reminder-status-badge" class="reminder-status inactive">
+                  <svg viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;stroke:currentColor;fill:none;"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  Reminder off
+                </div>
+
+                <!-- Config fields (hidden when disabled) -->
+                <div id="reminder-config" style="display:flex;flex-direction:column;gap:.7rem;">
+                  <div>
+                    <label class="section-label" style="display:block;margin-bottom:.4rem;">Recipient Email</label>
+                    <input type="email" id="r-email" class="form-input" placeholder="you@example.com">
+                  </div>
+                  <div>
+                    <label class="section-label" style="display:block;margin-bottom:.4rem;">Send Time</label>
+                    <select id="r-hour" class="form-input">
+                      <option value="6">6:00 AM</option>
+                      <option value="7">7:00 AM</option>
+                      <option value="8">8:00 AM</option>
+                      <option value="9">9:00 AM</option>
+                      <option value="12">12:00 PM (Noon)</option>
+                      <option value="17">5:00 PM</option>
+                      <option value="18">6:00 PM</option>
+                      <option value="19">7:00 PM</option>
+                      <option value="20" selected>8:00 PM</option>
+                      <option value="21">9:00 PM</option>
+                      <option value="22">10:00 PM</option>
+                    </select>
+                    <p style="font-size:.68rem;color:var(--tx3);margin-top:.35rem;">⏱ Times are in the script's timezone. Set in Apps Script: File → Project Settings → Time zone.</p>
+                  </div>
+                  <button class="btn-ghost" style="font-size:.78rem;" onclick="sendTestReminder()">
+                    📧 Send Test Email Now
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div><!-- /main-area -->
+</div><!-- /app -->
+
+
+<!-- ══════════════════════════════
+     MODAL — ADD / EDIT CATEGORY
+══════════════════════════════ -->
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,33,71,.5);backdrop-filter:blur(4px);align-items:center;justify-content:center;padding:1rem;">
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:460px;padding:1.4rem;display:flex;flex-direction:column;gap:.95rem;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,51,102,.2);">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <h3 style="font-family:'Syne',sans-serif;font-weight:700;font-size:.98rem;color:var(--navy);" id="modal-title">Add Category</h3>
+      <button onclick="closeAddCategoryModal()" style="background:none;border:none;color:var(--silver);cursor:pointer;font-size:1.4rem;line-height:1;padding:.15rem .3rem;">×</button>
+    </div>
+    <div><p class="section-label" style="margin-bottom:.45rem;">Icon</p><div id="icon-grid" style="display:flex;flex-wrap:wrap;gap:.35rem;"></div><input type="text" id="m-icon-custom" class="form-input" style="margin-top:.55rem;font-size:1.15rem;text-align:center;width:56px;" maxlength="2" placeholder="🎯"></div>
+    <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Category Name</label><input type="text" id="m-cat-name" class="form-input" placeholder="e.g. Hobbies"></div>
+    <div><label class="section-label" style="display:block;margin-bottom:.45rem;">Monthly Budget</label><input type="number" id="m-cat-budget" class="form-input" placeholder="0.00" min="0" step="10"></div>
+    <div>
+      <label class="section-label" style="display:block;margin-bottom:.45rem;">Subcategories</label>
+      <div id="m-subcats" style="display:flex;flex-wrap:wrap;gap:.38rem;min-height:26px;margin-bottom:.45rem;"></div>
+      <div style="display:flex;gap:.45rem;"><input type="text" id="m-subcat-input" class="form-input" placeholder="Type subcategory and press Enter…" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addModalSubcat();}"><button class="btn-gold" onclick="addModalSubcat()">+</button></div>
+    </div>
+    <div style="display:flex;gap:.55rem;padding-top:.1rem;">
+      <button class="btn-ghost" style="flex:1;" onclick="closeAddCategoryModal()">Cancel</button>
+      <button class="btn-primary" style="flex:2;" id="modal-save-btn" onclick="saveNewCategory()">Add Category</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════
+     JAVASCRIPT
+══════════════════════════════ -->
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+const App = {
+  currentMonth   : new Date().getMonth() + 1,
+  currentYear    : new Date().getFullYear(),
+  data           : null,
+  pieChart       : null,
+  barChart       : null,
+  subcatChart    : null,
+  activeDrillCat : null,
+  modalEditIndex : null,
+  modalSubcats   : [],
+  modalIcon      : '📦',
+  _subcategories : {},
+  _incomeSources : [],
+  sidebarCollapsed: false,
+  userEmail      : null,
+  userName       : null,
+  sessionToken   : null
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  SESSION MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+function getSessionToken() {
+  if (!App.sessionToken) {
+    App.sessionToken = localStorage.getItem('fintrack_session');
+  }
+  return App.sessionToken;
+}
+
+function setSessionToken(token) {
+  App.sessionToken = token;
+  localStorage.setItem('fintrack_session', token);
+}
+
+function clearSessionToken() {
+  App.sessionToken = null;
+  localStorage.removeItem('fintrack_session');
+}
+
+const CHART_PALETTE = ['#003366','#ffc72c','#7ba7bc','#1a8754','#c0392b','#004080','#a07700','#adb5bd','#002147','#e6af00','#a8c8d8','#6b8cae'];
+const ICON_PRESETS  = ['🍜','🍔','🍕','☕','🛒','🚗','🚌','✈️','💡','📱','📺','🎮','🎬','🎵','🛍️','👕','💊','❤️','🏋️','📚','🏫','🏦','💰','🏠','🏗️','🌿','🎯','🐶','🧴','🎁','📦','⚽'];
+const SOURCE_ICONS  = { 'Allowance':'🎁','Bonus':'🏆','Claim':'🧾','Commission':'📈','Freelance':'💻','Other':'💵' };
+
+// ═══════════════════════════════════════════════════════════════
+//  BOOTSTRAP
+// ═══════════════════════════════════════════════════════════════
+function init() {
+  console.log('Init called');
+
+  // Check if user has existing session
+  const sessionToken = getSessionToken();
+  console.log('Session token:', sessionToken ? 'Found' : 'Not found');
+
+  if (sessionToken) {
+    console.log('Validating session...');
+    // Validate existing session
+    google.script.run
+      .withSuccessHandler(function(result) {
+        console.log('Session validation result:', result);
+        if (result.success) {
+          // Session valid, go to app
+          App.userEmail = result.email;
+          App.userName = result.name;
+          console.log('Session valid, continuing to app');
+          continueToApp();
+        } else {
+          // Session invalid, show login
+          console.log('Session invalid, showing login');
+          clearSessionToken();
+          showLoginScreen();
+        }
+      })
+      .withFailureHandler(function(err) {
+        console.log('Session validation failed:', err);
+        clearSessionToken();
+        showLoginScreen();
+      })
+      .validateSession(sessionToken);
+  } else {
+    console.log('No session token, showing login screen');
+    showLoginScreen();
+  }
+}
+
+function showLoginScreen() {
+  // Hide the app
+  const app = document.getElementById('app');
+  if (app) {
+    app.style.display = 'none';
+    app.style.opacity = '0';
+  }
+
+  // Hide user info bar
+  const userInfoBar = document.getElementById('user-info-bar');
+  if (userInfoBar) userInfoBar.style.display = 'none';
+
+  // Show login screen
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) {
+    loginScreen.style.display = 'flex';
+  }
+
+  // Clear any form values
+  const loginEmail = document.getElementById('login-email');
+  const loginPassword = document.getElementById('login-password');
+  if (loginEmail) loginEmail.value = '';
+  if (loginPassword) loginPassword.value = '';
+
+  // Hide loading overlay
+  hideLoading();
+
+  // Log for debugging
+  console.log('Login screen shown');
+}
+
+function switchAuthTab(tab) {
+  const loginTab = document.getElementById('tab-login');
+  const registerTab = document.getElementById('tab-register');
+  const loginForm = document.getElementById('login-form');
+  const registerForm = document.getElementById('register-form');
+
+  if (tab === 'login') {
+    loginTab.style.background = 'var(--navy)';
+    loginTab.style.color = '#fff';
+    registerTab.style.background = 'transparent';
+    registerTab.style.color = 'var(--tx3)';
+    loginForm.style.display = 'flex';
+    registerForm.style.display = 'none';
+  } else {
+    registerTab.style.background = 'var(--navy)';
+    registerTab.style.color = '#fff';
+    loginTab.style.background = 'transparent';
+    loginTab.style.color = 'var(--tx3)';
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'flex';
+  }
+}
+
+function loginSubmit() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+
+  if (!email || !password) {
+    showToast('Please enter email and password.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('login-btn');
+  const btnText = document.getElementById('login-btn-text');
+  btn.disabled = true;
+  btnText.textContent = 'Logging in...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btnText.textContent = 'Login';
+
+      if (result.success) {
+        // Store session token
+        setSessionToken(result.sessionToken);
+        App.userEmail = result.email;
+        App.userName = result.name;
+
+        showToast('✅ ' + result.message, 'success');
+
+        // Clear form
+        document.getElementById('login-email').value = '';
+        document.getElementById('login-password').value = '';
+
+        // Continue to app
+        setTimeout(continueToApp, 500);
+      } else {
+        showToast('❌ ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btnText.textContent = 'Login';
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .loginUser(email, password);
+}
+
+function registerSubmit() {
+  const email = document.getElementById('register-email').value.trim();
+  const password = document.getElementById('register-password').value;
+  const confirmPassword = document.getElementById('register-password-confirm').value;
+
+  if (!email || !password || !confirmPassword) {
+    showToast('Please fill in all fields.', 'error');
+    return;
+  }
+
+  if (password !== confirmPassword) {
+    showToast('Passwords do not match.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('register-btn');
+  const btnText = document.getElementById('register-btn-text');
+  btn.disabled = true;
+  btnText.textContent = 'Creating account...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      btn.disabled = false;
+      btnText.textContent = 'Create Account';
+
+      if (result.success) {
+        showToast('✅ ' + result.message, 'success');
+
+        // Clear form
+        document.getElementById('register-email').value = '';
+        document.getElementById('register-password').value = '';
+        document.getElementById('register-password-confirm').value = '';
+
+        // Switch to login tab
+        setTimeout(function() {
+          switchAuthTab('login');
+          document.getElementById('login-email').value = result.email;
+        }, 1000);
+      } else {
+        showToast('❌ ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btnText.textContent = 'Create Account';
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .registerUser(email, password);
+}
+
+function continueToApp() {
+  console.log('Continuing to app...');
+
+  // Hide login screen
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) loginScreen.style.display = 'none';
+
+  // Show the app
+  const app = document.getElementById('app');
+  if (app) {
+    app.style.display = 'flex';
+    setTimeout(() => {
+      app.style.opacity = '1';
+    }, 50);
+  }
+
+  // Update user info in sidebar
+  const avatarEl = document.getElementById('user-avatar');
+  const nameEl = document.getElementById('user-name');
+  const emailDisplayEl = document.getElementById('user-email-display');
+  const currentEmailEl = document.getElementById('current-email-display');
+
+  if (avatarEl) avatarEl.textContent = App.userName.substring(0, 1).toUpperCase();
+  if (nameEl) nameEl.textContent = App.userName;
+  if (emailDisplayEl) emailDisplayEl.textContent = App.userEmail;
+  if (currentEmailEl) currentEmailEl.textContent = App.userEmail;
+
+  // Show user info in sidebar
+  const userInfoBar = document.getElementById('user-info-bar');
+  if (userInfoBar) userInfoBar.style.display = 'block';
+
+  // Initialize app data
+  document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('i-date').value = new Date().toISOString().split('T')[0];
+  setHistoryDefaultDates();
+  loadDashboard();
+
+  console.log('App initialized');
+}
+
+async function logout() {
+  const confirmed = await showConfirm(
+    'Are you sure you want to logout? You will need to login again to access your data.',
+    {
+      title: 'Logout',
+      confirmText: 'Logout',
+      cancelText: 'Cancel',
+      danger: false
+    }
+  );
+
+  if (!confirmed) return;
+
+  console.log('Logout confirmed, clearing session...');
+
+  // Show loading overlay
+  const loadingOverlay = document.getElementById('loading-overlay');
+  loadingOverlay.classList.remove('fade-out');
+  loadingOverlay.style.display = 'flex';
+
+  // Clear session token
+  clearSessionToken();
+  console.log('Session token cleared');
+
+  // Clear user data
+  App.userEmail = null;
+  App.userName = null;
+  App.data = null;
+
+  // Reset charts
+  if (App.pieChart) { App.pieChart.destroy(); App.pieChart = null; }
+  if (App.barChart) { App.barChart.destroy(); App.barChart = null; }
+  if (App.subcatChart) { App.subcatChart.destroy(); App.subcatChart = null; }
+
+  // Call server logout (cleanup) - don't wait for response
+  google.script.run.logoutUser(null);
+
+  // Directly show login screen without reload
+  setTimeout(function() {
+    console.log('Showing login screen...');
+    showLoginScreen();
+  }, 500);
+}
+
+function setHistoryDefaultDates() {
+  const now = new Date();
+  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,'0');
+  document.getElementById('h-start').value = y+'-'+m+'-01';
+  document.getElementById('h-end').value   = y+'-'+m+'-'+String(new Date(y,now.getMonth()+1,0).getDate()).padStart(2,'0');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DATA
+// ═══════════════════════════════════════════════════════════════
+function loadDashboard() {
+  google.script.run.withSuccessHandler(onDashboardData).withFailureHandler(onServerError)
+    .getDashboardDataWithAuth(getSessionToken(), App.currentMonth, App.currentYear);
+}
+
+function onDashboardData(d) {
+  if (!d || !d.success) { showToast('⚠️ '+(d?d.message:'Unknown error'),'error'); hideLoading(); return; }
+  App.data = d;
+  updateMonthLabel();
+  renderKpiCards(d);
+  renderPieChart(d);
+  renderBarChart(d);
+  renderSubcategorySection(d);
+  renderBudgetBars(d);
+  populateCategorySelect(d.categories, d.subcategories);
+  populateIncomeSourceSelect(d.incomeSources);
+  populateSettings(d);
+  populateReminderSettings(d.reminder);
+  renderIncomeEntries(d.incomeEntries, d.currency);
+  updateIncomeSummaryBar(d);
+  hideLoading();
+}
+
+function onServerError(err) { showToast('⚠️ '+err.message,'error'); hideLoading(); }
+
+function loadHistory() {
+  const start = document.getElementById('h-start').value;
+  const end   = document.getElementById('h-end').value;
+  if (!start||!end) { showToast('Please select a date range.','error'); return; }
+  google.script.run
+    .withSuccessHandler(result => renderTransactions(result, App.data?App.data.currency:'MYR'))
+    .withFailureHandler(onServerError)
+    .getTransactionsByDateRangeWithAuth(getSessionToken(), start, end);
+}
+
+function loadIncomeEntries() {
+  google.script.run
+    .withSuccessHandler(result => renderIncomeEntries(result, App.data?App.data.currency:'MYR'))
+    .withFailureHandler(onServerError)
+    .getIncomeEntriesWithAuth(getSessionToken(), App.currentMonth, App.currentYear);
+}
+
+function applyHistoryFilter() { loadHistory(); }
+function resetHistoryFilter() { setHistoryDefaultDates(); loadHistory(); }
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — KPI CARDS  (now uses totalIncome)
+// ═══════════════════════════════════════════════════════════════
+function renderKpiCards(d) {
+  const fmt  = v => fmtCurrency(v, d.currency);
+  const over = d.remainingBudget < 0;
+  const neg  = d.totalSaved < 0;
+
+  const cards = [
+    { accent:'#ffc72c', label:'Total Spent',    value:fmt(d.totalSpent),              sub:d.transactionCount+' transactions', icon:'💸' },
+    { accent:over?'#c0392b':'#1a8754', label:'Remaining Budget', value:fmt(Math.abs(d.remainingBudget)), sub:over?'⚠️ Over budget':'✅ Within budget', icon:over?'🔴':'🟢' },
+    { accent:neg?'#c0392b':'#7ba7bc', label:'Net Savings', value:fmt(d.totalSaved), sub:fmtPct(d.savingsRate)+' of income', icon:neg?'📉':'💰' },
+    { accent:'#003366', label:'Total Income', value:fmt(d.totalIncome),
+      sub: d.extraIncome > 0 ? 'Base '+fmt(d.monthlyIncome)+' + '+fmt(d.extraIncome)+' extra' : 'Base salary only', icon:'🏦' }
+  ];
+
+  document.getElementById('kpi-cards').innerHTML = cards.map(c => `
+    <div class="kpi-card">
+      <div class="kpi-accent-line" style="background:${c.accent};"></div>
+      <div style="font-size:1.05rem;margin-bottom:.35rem;">${c.icon}</div>
+      <div style="font-size:.58rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--tx3);margin-bottom:.18rem;">${c.label}</div>
+      <div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--navy);line-height:1.2;">${c.value}</div>
+      <div style="font-size:.63rem;color:var(--tx3);margin-top:.22rem;">${c.sub}</div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — INCOME SUMMARY BAR
+// ═══════════════════════════════════════════════════════════════
+function updateIncomeSummaryBar(d) {
+  const fmt = v => fmtCurrency(v, d.currency);
+  const base  = document.getElementById('inc-base');
+  const extra = document.getElementById('inc-extra');
+  const total = document.getElementById('inc-total');
+  if (base)  base.textContent  = fmt(d.monthlyIncome);
+  if (extra) extra.textContent = fmt(d.extraIncome);
+  if (total) total.textContent = fmt(d.totalIncome);
+  // update currency label on income form
+  const icurr = document.getElementById('i-currency');
+  if (icurr) icurr.textContent = d.currency;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — INCOME ENTRIES LIST
+// ═══════════════════════════════════════════════════════════════
+function renderIncomeEntries(entries, currency) {
+  const list = document.getElementById('income-list');
+  if (!list) return;
+  if (!entries || entries.length === 0) {
+    list.innerHTML = `<div class="empty-state"><p style="font-size:.85rem;">No extra income entries this month.</p><p style="font-size:.75rem;margin-top:.35rem;">Use the form above to add allowances, bonuses, claims, etc.</p></div>`;
+    return;
+  }
+  list.innerHTML = entries.map(e => {
+    const srcIcon = SOURCE_ICONS[e.source] || '💵';
+    return `
+    <div class="tx-row">
+      <div class="cat-icon" style="background:var(--gold-pale);">${srcIcon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.8rem;font-weight:600;color:var(--tx1);display:flex;align-items:center;gap:.35rem;">
+          ${escHtml(e.source)}
+          <span class="pill pill-gold" style="font-size:.6rem;">${escHtml(e.source)}</span>
+        </div>
+        <div style="font-size:.67rem;color:var(--tx3);margin-top:.08rem;">${formatDisplayDate(e.date)}${e.note?' · '+escHtml(e.note):''}</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:.8rem;font-weight:600;color:var(--green);white-space:nowrap;">+${fmtCurrency(e.amount,currency)}</div>
+      <button class="del-btn" onclick="deleteIncomeEntry(${e.id})" title="Delete">
+        <svg viewBox="0 0 24 24" stroke-width="2" style="width:11px;height:11px;stroke:currentColor;fill:none;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — PIE CHART
+// ═══════════════════════════════════════════════════════════════
+function renderPieChart(d) {
+  const cats    = d.categories.filter(c => d.spendingByCategory[c] > 0);
+  const amounts = cats.map(c => d.spendingByCategory[c]);
+  const colors  = cats.map((_, i) => CHART_PALETTE[i % CHART_PALETTE.length]);
+
+  if (App.pieChart) { App.pieChart.destroy(); App.pieChart = null; }
+  const cw = document.getElementById('pie-canvas-wrap');
+  const ce = document.getElementById('pie-empty');
+
+  if (cats.length === 0) { cw.style.display='none'; ce.style.display='block'; return; }
+  cw.style.display='flex'; ce.style.display='none';
+
+  App.pieChart = new Chart(document.getElementById('pie-chart').getContext('2d'), {
+    type: 'doughnut',
+    data: { labels:cats, datasets:[{ data:amounts, backgroundColor:colors.map(c=>c+'cc'), borderColor:colors, borderWidth:2, hoverOffset:5 }] },
+    options: {
+      cutout:'68%', responsive:true, maintainAspectRatio:true,
+      plugins: {
+        legend:{ position:'bottom', labels:{ color:'#2c4a6e', font:{size:10,family:'Manrope'}, padding:10, boxWidth:8, boxHeight:8 }},
+        tooltip:{ callbacks:{ label: ctx => { const tot=ctx.chart.data.datasets[0].data.reduce((a,b)=>a+b,0); return ` ${fmtCurrency(ctx.parsed,d.currency)} (${fmtPct((ctx.parsed/tot)*100)})`; }}, backgroundColor:'#fff', borderColor:'#dde3ea', borderWidth:1, titleColor:'#003366', bodyColor:'#6b8cae', padding:10 }
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — BAR CHART
+// ═══════════════════════════════════════════════════════════════
+function renderBarChart(d) {
+  const nonZero = d.dailySpending.filter(x => x.amount > 0);
+  const labels  = nonZero.map(x => x.day+'/'+String(d.month).padStart(2,'0'));
+  const values  = nonZero.map(x => x.amount);
+
+  if (App.barChart) { App.barChart.destroy(); App.barChart = null; }
+  const cw = document.getElementById('bar-canvas-wrap');
+  const ce = document.getElementById('bar-empty');
+
+  if (values.length === 0) { cw.style.display='none'; ce.style.display='block'; return; }
+  cw.style.display='block'; ce.style.display='none';
+
+  App.barChart = new Chart(document.getElementById('bar-chart').getContext('2d'), {
+    type: 'bar',
+    data: { labels, datasets:[{ label:'Spending', data:values, backgroundColor:'rgba(0,51,102,.14)', borderColor:'#003366', borderWidth:1.5, borderRadius:4, hoverBackgroundColor:'rgba(255,199,44,.65)' }] },
+    options: {
+      responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{label:ctx=>' '+fmtCurrency(ctx.parsed.y,d.currency)}, backgroundColor:'#fff', borderColor:'#dde3ea', borderWidth:1, titleColor:'#003366', bodyColor:'#6b8cae', padding:10 }},
+      scales:{ x:{ticks:{color:'#adb5bd',font:{size:8}},grid:{display:false}}, y:{ticks:{color:'#adb5bd',font:{size:9},callback:v=>fmtCurrencyShort(v)},grid:{color:'rgba(0,51,102,.05)'},beginAtZero:true} }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — SUBCATEGORY DRILL-DOWN
+// ═══════════════════════════════════════════════════════════════
+function renderSubcategorySection(d) {
+  const dt = document.getElementById('drill-tabs');
+  const ce = document.getElementById('subcategory-empty');
+  const cw = document.getElementById('subcat-canvas-wrap');
+  if (App.subcatChart) { App.subcatChart.destroy(); App.subcatChart = null; }
+
+  const cats = d.categories.filter(cat => { const s=d.spendingBySubcategory[cat]; return s && Object.keys(s).length>0; });
+  if (cats.length === 0) { dt.innerHTML=''; cw.style.display='none'; ce.style.display='block'; return; }
+  cw.style.display='block'; ce.style.display='none';
+  if (!App.activeDrillCat || !cats.includes(App.activeDrillCat)) App.activeDrillCat = cats[0];
+  dt.innerHTML = cats.map(cat => { const icon=(d.icons&&d.icons[cat])?d.icons[cat]:'📦'; return `<button class="drill-tab${cat===App.activeDrillCat?' active':''}" onclick="setDrillCat('${escHtml(cat)}')">${icon} ${escHtml(cat)}</button>`; }).join('');
+  renderSubcatChart(d, App.activeDrillCat);
+}
+
+function setDrillCat(cat) { App.activeDrillCat=cat; if(App.data) renderSubcategorySection(App.data); }
+
+function renderSubcatChart(d, cat) {
+  const sub = d.spendingBySubcategory[cat]||{};
+  const labels = Object.keys(sub), values = labels.map(k=>sub[k]);
+  if (App.subcatChart) { App.subcatChart.destroy(); App.subcatChart=null; }
+  const cw = document.getElementById('subcat-canvas-wrap');
+  const ce = document.getElementById('subcategory-empty');
+  if (labels.length===0) { cw.style.display='none'; ce.style.display='block'; return; }
+  cw.style.display='block'; ce.style.display='none';
+  App.subcatChart = new Chart(document.getElementById('subcategory-chart').getContext('2d'), {
+    type:'bar',
+    data:{ labels, datasets:[{ label:cat, data:values, backgroundColor:labels.map((_,i)=>CHART_PALETTE[i%CHART_PALETTE.length]+'aa'), borderColor:labels.map((_,i)=>CHART_PALETTE[i%CHART_PALETTE.length]), borderWidth:1.5, borderRadius:5 }] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:true, plugins:{ legend:{display:false}, tooltip:{callbacks:{label:ctx=>' '+fmtCurrency(ctx.parsed.x,d.currency)},backgroundColor:'#fff',borderColor:'#dde3ea',borderWidth:1,titleColor:'#003366',bodyColor:'#6b8cae',padding:10} }, scales:{ x:{ticks:{color:'#adb5bd',font:{size:9},callback:v=>fmtCurrencyShort(v)},grid:{color:'rgba(0,51,102,.05)'},beginAtZero:true}, y:{ticks:{color:'#2c4a6e',font:{size:9,family:'Manrope'}},grid:{display:false}} } }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — BUDGET BARS
+// ═══════════════════════════════════════════════════════════════
+function renderBudgetBars(d) {
+  const container = document.getElementById('budget-bars');
+  if (!d.categories||!d.categories.length) { container.innerHTML='<p style="color:var(--silver);font-size:.8rem;">No categories configured.</p>'; return; }
+  container.innerHTML = d.categories.map(cat => {
+    const status=d.budgetStatus[cat], icon=(d.icons&&d.icons[cat])?d.icons[cat]:'📦', pct=Math.round(status.percentage);
+    let barColor='#1a8754', pillClass='pill-green';
+    if(pct>=100){barColor='#c0392b';pillClass='pill-red';}
+    else if(pct>=70){barColor='#a07700';pillClass='pill-amber';}
+    return `<div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.45rem;">
+        <div style="display:flex;align-items:center;gap:.45rem;"><span style="font-size:.9rem;">${icon}</span><span style="font-size:.77rem;font-weight:600;color:var(--tx2);">${escHtml(cat)}</span></div>
+        <div style="display:flex;align-items:center;gap:.45rem;">
+          <span style="font-size:.65rem;color:var(--tx3);font-family:'JetBrains Mono',monospace;">${fmtCurrency(status.spent,d.currency)} / ${fmtCurrency(status.budget,d.currency)}</span>
+          <span class="pill ${pillClass}">${pct}%</span>
+        </div>
+      </div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${barColor};"></div></div>
+      ${status.isOver?`<p style="font-size:.63rem;color:var(--red);margin-top:.28rem;">⚠️ Over by ${fmtCurrency(Math.abs(status.remaining),d.currency)}</p>`:''}
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — TRANSACTIONS
+// ═══════════════════════════════════════════════════════════════
+function renderTransactions(txs, currency) {
+  const list=document.getElementById('tx-list'), countEl=document.getElementById('tx-count');
+  if(countEl) countEl.textContent=txs.length+' transaction'+(txs.length!==1?'s':'');
+  if(!txs||txs.length===0) { list.innerHTML=`<div class="empty-state"><p style="font-size:.85rem;color:var(--silver);">No transactions found.</p><p style="font-size:.75rem;margin-top:.35rem;color:var(--silver);">Adjust the date range or add an expense.</p></div>`; return; }
+  const icons=(App.data&&App.data.icons)?App.data.icons:{};
+  list.innerHTML=txs.map(tx=>{
+    const icon=icons[tx.category]||'📦';
+    const sub=tx.subcategory?`<span style="font-size:.62rem;background:var(--gold-pale);color:var(--amber);font-weight:700;padding:.1rem .4rem;border-radius:4px;">${escHtml(tx.subcategory)}</span>`:'';
+    return `<div class="tx-row">
+      <div class="cat-icon">${icon}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:.8rem;font-weight:600;color:var(--tx1);display:flex;align-items:center;flex-wrap:wrap;gap:.2rem;">${escHtml(tx.category)}${sub}</div>
+        <div style="font-size:.67rem;color:var(--tx3);margin-top:.08rem;">${formatDisplayDate(tx.date)}${tx.note?' · '+escHtml(tx.note):''}</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:.8rem;font-weight:600;color:var(--navy);white-space:nowrap;">${fmtCurrency(tx.amount,currency)}</div>
+      <button class="del-btn" onclick="deleteTransaction(${tx.id})" title="Delete"><svg viewBox="0 0 24 24" stroke-width="2" style="width:11px;height:11px;stroke:currentColor;fill:none;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg></button>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER — SETTINGS
+// ═══════════════════════════════════════════════════════════════
+function populateSettings(d) {
+  const incEl=document.getElementById('s-income'), curEl=document.getElementById('s-currency');
+  if(incEl) incEl.value=d.monthlyIncome;
+  if(curEl) curEl.value=d.currency;
+  const curLabel=document.getElementById('currency-label');
+  if(curLabel) curLabel.textContent=d.currency;
+
+  // Income sources
+  App._incomeSources = [...(d.incomeSources||[])];
+  renderIncomeSourceTags();
+
+  // Categories
+  const container=document.getElementById('s-categories');
+  if(!container) return;
+  container.innerHTML=d.categories.map((cat,idx)=>{
+    const budget=d.budgets[cat]||0, icon=(d.icons&&d.icons[cat])?d.icons[cat]:'📦';
+    const subcats=(d.subcategories&&d.subcategories[cat])?d.subcategories[cat]:[];
+    const subHtml=subcats.map(s=>`<span class="subcat-tag">${escHtml(s)}</span>`).join('');
+    return `<div class="cat-row" id="cat-row-${idx}">
+      <div class="cat-row-header" onclick="toggleCatRow(${idx})">
+        <span style="font-size:1rem;flex-shrink:0;">${icon}</span>
+        <span style="flex:1;font-size:.8rem;font-weight:600;color:var(--tx1);">${escHtml(cat)}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:.72rem;color:var(--tx3);">${fmtCurrency(budget,d.currency)}</span>
+        <svg viewBox="0 0 24 24" stroke-width="2" style="width:13px;height:13px;stroke:var(--silver);fill:none;flex-shrink:0;transition:transform .2s;" id="cat-chevron-${idx}"><path d="M6 9l6 6 6-6"/></svg>
+        <button onclick="event.stopPropagation();editCategory(${idx})" style="background:none;border:none;cursor:pointer;color:var(--steel);padding:.1rem .25rem;font-size:.72rem;">✏️</button>
+        <button onclick="event.stopPropagation();removeCategoryRow(${idx})" style="background:none;border:none;cursor:pointer;color:var(--silver);padding:.1rem .25rem;font-size:.72rem;">🗑️</button>
+      </div>
+      <div class="cat-row-body">
+        <div style="margin-bottom:.55rem;">
+          <label class="section-label" style="margin-bottom:.38rem;display:block;">Monthly Budget</label>
+          <input type="number" class="form-input" style="font-size:.82rem;padding:.48rem .7rem;" data-category="${escHtml(cat)}" value="${budget}" min="0" step="10">
+        </div>
+        ${subcats.length>0?`<div><p class="section-label" style="margin-bottom:.38rem;">Subcategories</p><div style="display:flex;flex-wrap:wrap;gap:.32rem;">${subHtml}</div></div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderIncomeSourceTags() {
+  const el = document.getElementById('s-income-sources');
+  if (!el) return;
+  el.innerHTML = App._incomeSources.map((src, i) =>
+    `<span class="src-tag">${SOURCE_ICONS[src]||'💵'} ${escHtml(src)}<span class="rm" onclick="removeIncomeSource(${i})">×</span></span>`
+  ).join('');
+}
+
+function addIncomeSource() {
+  const inp = document.getElementById('s-new-source');
+  const val = inp.value.trim();
+  if (!val) return;
+  if (App._incomeSources.includes(val)) { showToast('Source already exists.','error'); return; }
+  App._incomeSources.push(val); inp.value='';
+  renderIncomeSourceTags();
+  populateIncomeSourceSelect(App._incomeSources);
+}
+
+function removeIncomeSource(idx) {
+  App._incomeSources.splice(idx, 1);
+  renderIncomeSourceTags();
+  populateIncomeSourceSelect(App._incomeSources);
+}
+
+function populateIncomeSourceSelect(sources) {
+  const sel = document.getElementById('i-source');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="" disabled>Select income source…</option>';
+  (sources||[]).forEach(s => {
+    const opt=document.createElement('option'); opt.value=opt.textContent=s;
+    if(s===cur) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  App._incomeSources = sources||[];
+}
+
+function toggleCatRow(idx) {
+  const row=document.getElementById('cat-row-'+idx), chev=document.getElementById('cat-chevron-'+idx);
+  row.classList.toggle('open'); chev.style.transform=row.classList.contains('open')?'rotate(180deg)':'';
+}
+async function removeCategoryRow(idx) {
+  const confirmed = await showConfirm(
+    'Are you sure you want to remove this category? This will not delete existing transactions.',
+    {
+      title: 'Remove Category',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      danger: true
+    }
+  );
+  if (!confirmed) return;
+  const r = document.getElementById('cat-row-' + idx);
+  if (r) r.remove();
+}
+function editCategory(idx) {
+  const d=App.data; if(!d)return;
+  const cat=d.categories[idx]; if(!cat)return;
+  App.modalEditIndex=idx;
+  document.getElementById('modal-title').textContent='Edit Category';
+  document.getElementById('modal-save-btn').textContent='Save Changes';
+  document.getElementById('m-cat-name').value=cat;
+  document.getElementById('m-cat-budget').value=d.budgets[cat]||0;
+  const icon=(d.icons&&d.icons[cat])?d.icons[cat]:'📦';
+  document.getElementById('m-icon-custom').value=icon;
+  App.modalIcon=icon; App.modalSubcats=(d.subcategories&&d.subcategories[cat])?[...d.subcategories[cat]]:[];
+  renderModalSubcats(); renderIconGrid();
+  document.getElementById('modal-overlay').style.display='flex';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CATEGORY SELECT
+// ═══════════════════════════════════════════════════════════════
+function populateCategorySelect(categories, subcategories) {
+  const sel=document.getElementById('f-category'), cur=sel.value;
+  sel.innerHTML='<option value="" disabled>Select a category…</option>';
+  categories.forEach(c=>{ const o=document.createElement('option'); o.value=o.textContent=c; if(c===cur)o.selected=true; sel.appendChild(o); });
+  if(!cur) sel.value='';
+  App._subcategories=subcategories||{};
+}
+
+function onCategoryChange() {
+  const cat=document.getElementById('f-category').value;
+  const subcats=(App._subcategories&&App._subcategories[cat])?App._subcategories[cat]:[];
+  const field=document.getElementById('subcategory-field'), sel=document.getElementById('f-subcategory');
+  if(subcats.length>0){ sel.innerHTML='<option value="">— None —</option>'; subcats.forEach(s=>{const o=document.createElement('option');o.value=o.textContent=s;sel.appendChild(o);}); field.style.display='block'; }
+  else { field.style.display='none'; sel.value=''; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FORM ACTIONS
+// ═══════════════════════════════════════════════════════════════
+function submitTransaction() {
+  const date=document.getElementById('f-date').value.trim();
+  const amount=document.getElementById('f-amount').value.trim();
+  const category=document.getElementById('f-category').value;
+  const subcategory=document.getElementById('f-subcategory').value;
+  const note=document.getElementById('f-note').value.trim();
+  if(!date){showToast('Please select a date.','error');return;}
+  if(!amount||parseFloat(amount)<=0){showToast('Enter a valid amount > 0.','error');return;}
+  if(!category){showToast('Please select a category.','error');return;}
+  const btn=document.getElementById('submit-btn'), txt=document.getElementById('btn-text');
+  btn.disabled=true; txt.textContent='Saving…';
+  google.script.run
+    .withSuccessHandler(result=>{ btn.disabled=false; txt.textContent='Save Transaction'; if(result.success){showToast(result.message,'success');document.getElementById('f-amount').value='';document.getElementById('f-note').value='';document.getElementById('f-subcategory').value='';loadDashboard();}else{showToast('❌ '+result.message,'error');} })
+    .withFailureHandler(err=>{btn.disabled=false;txt.textContent='Save Transaction';showToast('⚠️ '+err.message,'error');})
+    .addTransactionWithAuth(getSessionToken(), {date,amount:parseFloat(amount),category,subcategory,note});
+}
+
+function submitIncome() {
+  const date=document.getElementById('i-date').value.trim();
+  const amount=document.getElementById('i-amount').value.trim();
+  const source=document.getElementById('i-source').value;
+  const note=document.getElementById('i-note').value.trim();
+  if(!date){showToast('Please select a date.','error');return;}
+  if(!amount||parseFloat(amount)<=0){showToast('Enter a valid amount > 0.','error');return;}
+  if(!source){showToast('Please select an income source.','error');return;}
+  const btn=document.getElementById('income-submit-btn'), txt=document.getElementById('income-btn-text');
+  btn.disabled=true; txt.textContent='Saving…';
+  google.script.run
+    .withSuccessHandler(result=>{ btn.disabled=false; txt.textContent='Save Income Entry'; if(result.success){showToast(result.message,'success');document.getElementById('i-amount').value='';document.getElementById('i-note').value='';loadDashboard();}else{showToast('❌ '+result.message,'error');} })
+    .withFailureHandler(err=>{btn.disabled=false;txt.textContent='Save Income Entry';showToast('⚠️ '+err.message,'error');})
+    .addIncomeEntryWithAuth(getSessionToken(), {date,amount:parseFloat(amount),source,note});
+}
+
+async function deleteTransaction(rowIndex) {
+  const confirmed = await showConfirm(
+    'Delete this transaction? This action cannot be undone.',
+    {
+      title: 'Delete Transaction',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true
+    }
+  );
+  if (!confirmed) return;
+  google.script.run
+    .withSuccessHandler(result=>{ if(result.success){showToast('Transaction deleted.','success');loadDashboard();loadHistory();}else showToast('❌ '+result.message,'error'); })
+    .withFailureHandler(err=>showToast('⚠️ '+err.message,'error'))
+    .deleteTransactionWithAuth(getSessionToken(), rowIndex);
+}
+
+async function deleteIncomeEntry(rowIndex) {
+  const confirmed = await showConfirm(
+    'Delete this income entry? This action cannot be undone.',
+    {
+      title: 'Delete Income Entry',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      danger: true
+    }
+  );
+  if (!confirmed) return;
+  google.script.run
+    .withSuccessHandler(result=>{ if(result.success){showToast('Income entry deleted.','success');loadDashboard();}else showToast('❌ '+result.message,'error'); })
+    .withFailureHandler(err=>showToast('⚠️ '+err.message,'error'))
+    .deleteIncomeEntryWithAuth(getSessionToken(), rowIndex);
+}
+
+function saveSettings() {
+  const income   = parseFloat(document.getElementById('s-income').value) || 0;
+  const currency = document.getElementById('s-currency').value.trim().toUpperCase() || 'MYR';
+  const catRows  = document.querySelectorAll('#s-categories .cat-row');
+  const categories = [];
+  catRows.forEach(row => {
+    const inp = row.querySelector('input[data-category]'); if (!inp) return;
+    const catName = inp.getAttribute('data-category'), budget = parseFloat(inp.value) || 0;
+    const icon    = (App.data && App.data.icons    && App.data.icons[catName])    ? App.data.icons[catName]    : '📦';
+    const subcats = (App.data && App.data.subcategories && App.data.subcategories[catName]) ? App.data.subcategories[catName] : [];
+    categories.push({ name:catName, budget, icon, subcategories:subcats });
+  });
+
+  const payload = {
+    monthlyIncome : income,
+    currency      : currency,
+    incomeSources : [...App._incomeSources],
+    categories    : categories,
+    reminder      : {
+      enabled : document.getElementById('reminder-toggle')?.classList.contains('on') || false,
+      email   : document.getElementById('r-email')?.value?.trim() || '',
+      hour    : parseInt(document.getElementById('r-hour')?.value) || 20
+    }
+  };
+
+  // Step 1: save to spreadsheet (safe — no ScriptApp calls)
+  google.script.run
+    .withSuccessHandler(result => {
+      if (!result.success) { showToast('❌ ' + result.message, 'error'); return; }
+      showToast('Settings saved! ✅', 'success');
+      loadDashboard();
+
+      // Step 2: apply trigger as a separate call (requires script.scriptapp scope)
+      google.script.run
+        .withSuccessHandler(tr => {
+          if (tr && !tr.success && tr.message === 'NEEDS_AUTH') {
+            showAuthBanner();
+          } else if (tr && tr.success && tr.triggerActive) {
+            showToast(tr.message, 'success');
+          }
+        })
+        .withFailureHandler(err => {
+          if (err && err.message && err.message.indexOf('script.scriptapp') !== -1) {
+            showAuthBanner();
+          }
+        })
+        .applyReminderTriggerWithAuth(getSessionToken());
+    })
+    .withFailureHandler(err => showToast('⚠️ ' + err.message, 'error'))
+    .saveSettingsWithAuth(getSessionToken(), payload);
+}
+
+function showAuthBanner() {
+  const banner = document.getElementById('auth-banner');
+  const msg    = document.getElementById('auth-banner-msg');
+  if (!banner) return;
+  if (msg) msg.innerHTML = '<strong>One-time setup needed:</strong> In the Apps Script editor, select <code style="background:rgba(255,255,255,.15);padding:1px 5px;border-radius:3px;">authorizeReminder</code> from the function dropdown, click ▶ Run, and accept the permission prompt. Then save settings again.';
+  banner.style.display = 'flex';
+}
+
+function dismissAuthBanner() {
+  const banner = document.getElementById('auth-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MODAL
+// ═══════════════════════════════════════════════════════════════
+function openAddCategoryModal() {
+  App.modalEditIndex=null; App.modalSubcats=[]; App.modalIcon='📦';
+  document.getElementById('modal-title').textContent='Add Category';
+  document.getElementById('modal-save-btn').textContent='Add Category';
+  document.getElementById('m-cat-name').value='';
+  document.getElementById('m-cat-budget').value='';
+  document.getElementById('m-icon-custom').value='📦';
+  renderModalSubcats(); renderIconGrid();
+  document.getElementById('modal-overlay').style.display='flex';
+}
+function closeAddCategoryModal() { document.getElementById('modal-overlay').style.display='none'; }
+function renderIconGrid() { document.getElementById('icon-grid').innerHTML=ICON_PRESETS.map(ic=>`<button class="icon-btn${ic===App.modalIcon?' selected':''}" onclick="selectIcon('${ic}')">${ic}</button>`).join(''); }
+function selectIcon(ic) { App.modalIcon=ic; document.getElementById('m-icon-custom').value=ic; renderIconGrid(); }
+function renderModalSubcats() { document.getElementById('m-subcats').innerHTML=App.modalSubcats.map((s,i)=>`<span class="subcat-tag">${escHtml(s)}<span class="rm" onclick="removeModalSubcat(${i})">×</span></span>`).join(''); }
+function addModalSubcat() { const inp=document.getElementById('m-subcat-input'),val=inp.value.trim(); if(!val)return; if(App.modalSubcats.includes(val)){showToast('Already added.','error');return;} App.modalSubcats.push(val); inp.value=''; renderModalSubcats(); }
+function removeModalSubcat(idx) { App.modalSubcats.splice(idx,1); renderModalSubcats(); }
+function saveNewCategory() {
+  const icon=document.getElementById('m-icon-custom').value.trim()||App.modalIcon||'📦';
+  const name=document.getElementById('m-cat-name').value.trim();
+  const budget=parseFloat(document.getElementById('m-cat-budget').value)||0;
+  if(!name){showToast('Enter a category name.','error');return;}
+  const d=App.data; if(!d){showToast('Data not loaded yet.','error');return;}
+  if(App.modalEditIndex===null){
+    if(d.categories.includes(name)){showToast('Category already exists.','error');return;}
+    d.categories.push(name); d.budgets[name]=budget; d.icons[name]=icon;
+    d.subcategories[name]=[...App.modalSubcats];
+    d.budgetStatus[name]={spent:0,budget,remaining:budget,percentage:0,isOver:false};
+    d.spendingByCategory[name]=0;
+  } else {
+    const old=d.categories[App.modalEditIndex]; d.categories[App.modalEditIndex]=name;
+    if(old!==name){delete d.budgets[old];delete d.icons[old];delete d.subcategories[old];}
+    d.budgets[name]=budget; d.icons[name]=icon; d.subcategories[name]=[...App.modalSubcats];
+  }
+  populateSettings(d); populateCategorySelect(d.categories,d.subcategories); closeAddCategoryModal();
+  showToast(App.modalEditIndex===null?'Category added! Save settings to persist.':'Category updated! Save settings to persist.','success');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SIDEBAR NAVIGATION
+// ═══════════════════════════════════════════════════════════════
+function switchTab(tab) {
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+tab).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.getElementById('nav-'+tab).classList.add('active');
+  // Month nav visible only on dashboard
+  const mnav = document.getElementById('month-nav-sidebar');
+  if (mnav) mnav.style.display = (tab==='dashboard') ? 'flex' : 'none';
+  // Load data on tab switch
+  if (tab==='transactions') loadHistory();
+  if (tab==='income') loadIncomeEntries();
+  // Close mobile sidebar on navigation
+  closeMobileSidebar();
+}
+
+function toggleSidebar() {
+  App.sidebarCollapsed = !App.sidebarCollapsed;
+  const sb = document.getElementById('sidebar');
+  const ma = document.getElementById('main-area');
+  const icon = document.getElementById('toggle-icon');
+  sb.classList.toggle('collapsed', App.sidebarCollapsed);
+  ma.classList.toggle('sidebar-collapsed', App.sidebarCollapsed);
+  icon.style.transform = App.sidebarCollapsed ? 'rotate(180deg)' : '';
+}
+
+function openMobileSidebar() {
+  document.getElementById('sidebar').classList.add('mobile-open');
+  document.getElementById('sidebar-overlay').classList.add('visible');
+}
+function closeMobileSidebar() {
+  document.getElementById('sidebar').classList.remove('mobile-open');
+  document.getElementById('sidebar-overlay').classList.remove('visible');
+}
+
+function changeMonth(delta) {
+  App.currentMonth+=delta;
+  if(App.currentMonth>12){App.currentMonth=1;App.currentYear++;}
+  if(App.currentMonth<1){App.currentMonth=12;App.currentYear--;}
+  updateMonthLabel(); loadDashboard();
+}
+
+function updateMonthLabel() {
+  const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const label = names[App.currentMonth-1]+' '+App.currentYear;
+  document.getElementById('month-label').textContent = label;
+  const ml2 = document.getElementById('month-label-mobile');
+  if (ml2) ml2.textContent = label;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function fmtCurrency(value, currency) {
+  const c=currency||'MYR';
+  try{return new Intl.NumberFormat('en-MY',{style:'currency',currency:c,minimumFractionDigits:2,maximumFractionDigits:2}).format(value);}
+  catch(_){return c+' '+value.toFixed(2);}
+}
+function fmtCurrencyShort(v){return v>=1000?(v/1000).toFixed(1)+'k':v.toFixed(0);}
+function fmtPct(pct){return pct.toFixed(1)+'%';}
+function formatDisplayDate(iso){if(!iso)return'';const[y,m,d]=iso.split('-');return parseInt(d)+' '+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m)-1]+' '+y;}
+function escHtml(str){return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+let _toastTimer=null;
+function showToast(msg,type){const el=document.getElementById('toast');el.textContent=msg;el.className='show '+(type||'');clearTimeout(_toastTimer);_toastTimer=setTimeout(()=>{el.className='';},3200);}
+function hideLoading() {
+  const loadingOverlay = document.getElementById('loading-overlay');
+  if (loadingOverlay) {
+    loadingOverlay.classList.add('fade-out');
+    setTimeout(() => {
+      loadingOverlay.style.display = 'none';
+    }, 450);
+  }
+  console.log('Loading overlay hidden');
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REMINDER UI
+// ═══════════════════════════════════════════════════════════════
+
+/** Populate reminder fields from dashboard data. */
+function populateReminderSettings(reminder) {
+  if (!reminder) return;
+  const toggle  = document.getElementById('reminder-toggle');
+  const emailEl = document.getElementById('r-email');
+  const hourEl  = document.getElementById('r-hour');
+  const badge   = document.getElementById('reminder-status-badge');
+  const config  = document.getElementById('reminder-config');
+
+  if (emailEl) emailEl.value = reminder.email || '';
+  if (hourEl)  hourEl.value  = String(reminder.hour || 20);
+
+  const isOn = !!reminder.enabled;
+  if (toggle) toggle.classList.toggle('on', isOn);
+  if (badge) {
+    badge.className = 'reminder-status ' + (isOn ? 'active' : 'inactive');
+    badge.innerHTML = isOn
+      ? '<svg viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;stroke:currentColor;fill:none;"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8a19.79 19.79 0 01-3.07-8.63A2 2 0 012 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14h0"/></svg>'
+        + ' Active — sending daily at ' + _fmtHour(reminder.hour)
+      : '<svg viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;stroke:currentColor;fill:none;"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+        + ' Reminder off';
+  }
+  if (config) config.style.display = isOn ? 'flex' : 'none';
+}
+
+function _fmtHour(h) {
+  h = parseInt(h) || 20;
+  const s = h < 12 ? 'AM' : 'PM', d = h===0?12:h>12?h-12:h;
+  return d + ':00 ' + s;
+}
+
+function toggleReminder() {
+  const toggle = document.getElementById('reminder-toggle');
+  const isOn   = !toggle.classList.contains('on');
+  toggle.classList.toggle('on', isOn);
+  const badge  = document.getElementById('reminder-status-badge');
+  const config = document.getElementById('reminder-config');
+  const hour   = parseInt(document.getElementById('r-hour')?.value) || 20;
+  if (badge) {
+    badge.className = 'reminder-status ' + (isOn ? 'active' : 'inactive');
+    badge.innerHTML = isOn
+      ? '<svg viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;stroke:currentColor;fill:none;"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 8.8a19.79 19.79 0 01-3.07-8.63A2 2 0 012 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14h0"/></svg>'
+        + ' Active — sending daily at ' + _fmtHour(hour)
+      : '<svg viewBox="0 0 24 24" stroke-width="2" style="width:12px;height:12px;stroke:currentColor;fill:none;"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+        + ' Reminder off';
+  }
+  if (config) config.style.display = isOn ? 'flex' : 'none';
+}
+
+function sendTestReminder() {
+  const email = document.getElementById('r-email')?.value?.trim();
+  if (!email) { showToast('Please enter an email address first.', 'error'); return; }
+  showToast('Sending test email…', '');
+  const token = getSessionToken();
+  google.script.run
+    .withSuccessHandler(() => showToast('✅ Test email sent to ' + email, 'success'))
+    .withFailureHandler(err => showToast('⚠️ ' + err.message, 'error'))
+    .sendDailyReminderWithAuth(token);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  EXPORT / IMPORT
+// ═══════════════════════════════════════════════════════════════
+
+function exportAsJSON() {
+  showToast('Preparing export…', '');
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        downloadFile(result.data, result.filename, 'application/json');
+        showToast('✅ Data exported successfully!', 'success');
+      } else {
+        showToast('❌ Export failed: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .exportDataAsJSONWithAuth(getSessionToken());
+}
+
+function exportAsCSV() {
+  showToast('Preparing CSV export…', '');
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        downloadFile(result.data, result.filename, 'text/csv');
+        showToast('✅ Transactions exported as CSV!', 'success');
+      } else {
+        showToast('❌ Export failed: ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .exportTransactionsAsCSVWithAuth(getSessionToken());
+}
+
+async function importData() {
+  const fileInput = document.getElementById('import-file');
+  const file = fileInput.files[0];
+
+  if (!file) {
+    showToast('Please select a file to import.', 'error');
+    return;
+  }
+
+  if (!file.name.endsWith('.json')) {
+    showToast('Please select a JSON file.', 'error');
+    return;
+  }
+
+  const confirmed = await showConfirm(
+    'Import will add data to your existing records. Your current data will not be deleted. Do you want to continue?',
+    {
+      title: 'Import Data',
+      confirmText: 'Import',
+      cancelText: 'Cancel',
+      danger: false
+    }
+  );
+
+  if (!confirmed) return;
+
+  const reader = new FileReader();
+
+  reader.onload = function(e) {
+    const jsonString = e.target.result;
+    showToast('Importing data…', '');
+
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result.success) {
+          showToast(result.message, 'success');
+          fileInput.value = ''; // Clear file input
+          loadDashboard(); // Reload data
+        } else {
+          showToast('❌ ' + result.message, 'error');
+        }
+      })
+      .withFailureHandler(function(err) {
+        showToast('⚠️ Import failed: ' + err.message, 'error');
+      })
+      .importDataFromJSONWithAuth(getSessionToken(), jsonString);
+  };
+
+  reader.onerror = function() {
+    showToast('Failed to read file.', 'error');
+  };
+
+  reader.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  USER MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+async function changeEmail() {
+  const newEmail = document.getElementById('new-email').value.trim();
+
+  if (!newEmail) {
+    showToast('Please enter a new email address.', 'error');
+    return;
+  }
+
+  const confirmed = await showConfirm(
+    'Change your email address to ' + newEmail + '? You will continue to stay logged in.',
+    {
+      title: 'Change Email',
+      confirmText: 'Change Email',
+      cancelText: 'Cancel',
+      danger: false
+    }
+  );
+
+  if (!confirmed) return;
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast('✅ ' + result.message, 'success');
+        App.userEmail = result.newEmail;
+        App.userName = result.newEmail.split('@')[0];
+
+        // Update session token with new email-based token
+        if (result.newToken) {
+          setSessionToken(result.newToken);
+        }
+
+        // Update UI
+        document.getElementById('current-email-display').textContent = result.newEmail;
+        document.getElementById('user-email-display').textContent = result.newEmail;
+        document.getElementById('user-name').textContent = App.userName;
+        document.getElementById('user-avatar').textContent = App.userName.substring(0, 1).toUpperCase();
+        document.getElementById('new-email').value = '';
+      } else {
+        showToast('❌ ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .updateUserEmail(getSessionToken(), newEmail);
+}
+
+function changePassword() {
+  const currentPassword = document.getElementById('current-password').value;
+  const newPassword = document.getElementById('new-password').value;
+  const confirmPassword = document.getElementById('confirm-password').value;
+
+  if (!currentPassword || !newPassword || !confirmPassword) {
+    showToast('Please fill in all password fields.', 'error');
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    showToast('New passwords do not match.', 'error');
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result.success) {
+        showToast('✅ ' + result.message, 'success');
+        document.getElementById('current-password').value = '';
+        document.getElementById('new-password').value = '';
+        document.getElementById('confirm-password').value = '';
+      } else {
+        showToast('❌ ' + result.message, 'error');
+      }
+    })
+    .withFailureHandler(function(err) {
+      showToast('⚠️ ' + err.message, 'error');
+    })
+    .updateUserPassword(getSessionToken(), currentPassword, newPassword);
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CUSTOM CONFIRMATION MODAL
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Show custom confirmation modal
+ * @param {string} message - The confirmation message
+ * @param {object} options - Optional settings { title, confirmText, cancelText, danger }
+ * @returns {Promise<boolean>} - Resolves to true if confirmed, false if cancelled
+ */
+function showConfirm(message, options = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirm-modal');
+    const titleEl = document.getElementById('confirm-title-text');
+    const messageEl = document.getElementById('confirm-modal-message');
+    const confirmBtn = document.getElementById('confirm-btn-confirm');
+    const cancelBtn = document.getElementById('confirm-btn-cancel');
+
+    // Set content
+    titleEl.textContent = options.title || 'Confirm Action';
+    messageEl.textContent = message;
+    confirmBtn.textContent = options.confirmText || 'Confirm';
+    cancelBtn.textContent = options.cancelText || 'Cancel';
+
+    // Set danger style if needed
+    if (options.danger) {
+      confirmBtn.classList.add('danger');
+    } else {
+      confirmBtn.classList.remove('danger');
+    }
+
+    // Show modal
+    modal.classList.add('show');
+
+    // Handle confirm
+    const onConfirm = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    // Handle cancel
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    // Handle escape key
+    const onEscape = (e) => {
+      if (e.key === 'Escape') {
+        cleanup();
+        resolve(false);
+      }
+    };
+
+    // Cleanup function
+    const cleanup = () => {
+      modal.classList.remove('show');
+      confirmBtn.removeEventListener('click', onConfirm);
+      cancelBtn.removeEventListener('click', onCancel);
+      document.removeEventListener('keydown', onEscape);
+    };
+
+    // Add event listeners
+    confirmBtn.addEventListener('click', onConfirm);
+    cancelBtn.addEventListener('click', onCancel);
+    document.addEventListener('keydown', onEscape);
+
+    // Close on backdrop click
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        cleanup();
+        resolve(false);
+      }
+    }, { once: true });
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<!-- Confirmation Modal -->
+<div id="confirm-modal">
+  <div class="confirm-modal-content">
+    <div class="confirm-modal-header">
+      <h3 class="confirm-modal-title" id="confirm-modal-title">
+        <svg viewBox="0 0 24 24" stroke-width="2" style="width:20px;height:20px;stroke:currentColor;fill:none;flex-shrink:0;">
+          <circle cx="12" cy="12" r="9"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span id="confirm-title-text">Confirm Action</span>
+      </h3>
+    </div>
+    <div class="confirm-modal-body" id="confirm-modal-message">
+      Are you sure you want to proceed?
+    </div>
+    <div class="confirm-modal-footer">
+      <button class="confirm-btn confirm-btn-cancel" id="confirm-btn-cancel">Cancel</button>
+      <button class="confirm-btn confirm-btn-confirm" id="confirm-btn-confirm">Confirm</button>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
